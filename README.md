@@ -1,0 +1,64 @@
+<p align="center"><img src="https://kagedcap.io/kc-logo.svg" width="260" alt="KagedCap"></p>
+
+# KagedCap Rust SDK
+
+Solve reCAPTCHA v3 and v3 Enterprise tokens with a single API key. Blocking client
+built on `ureq`.
+
+## Install
+
+```bash
+cargo add kagedcap
+```
+
+Or in `Cargo.toml`:
+
+```toml
+[dependencies]
+kagedcap = "0.1"
+```
+
+## Quick start
+
+```rust
+use kagedcap::{KagedCapClient, SolveParams};
+
+fn main() {
+    let kc = KagedCapClient::new(std::env::var("KAGEDCAP_API_KEY").unwrap());
+
+    let res = kc.solve(SolveParams {
+        sitekey: "6LcvL3UrAAAAAO_9u8Seiuf-I6F_tP_jSS-zndXV".into(),
+        url: "https://www.ticketmaster.com".into(),
+        action: "Event".into(),
+        enterprise: true, // ProxyLess Enterprise
+        ..Default::default()
+    }).unwrap();
+    println!("{}", res.token);
+
+    let bal = kc.check_balance().unwrap();
+    println!("balance: {}", bal.display);
+}
+```
+
+## With a proxy
+
+```rust
+let res = kc.solve(SolveParams {
+    sitekey: "6Lc...".into(),
+    url: "https://example.com/login".into(),
+    action: "login".into(),
+    proxy: Some("http://user:pass@1.2.3.4:8080".into()), // or host:port:user:pass
+    ..Default::default()
+})?;
+```
+
+Leave `proxy` as `None` for a ProxyLess solve. Set `enterprise: true` for Enterprise
+sitekeys, or set `task` explicitly.
+
+## Errors
+
+Failures return `KagedCapError` with `.status`, `.code`, and `.message`. Common
+codes: `unauthorized`, `insufficient_funds`, `solve_failed`, `solve_timeout`,
+`proxy_required`, `proxy_not_allowed`, `validation_error`.
+
+Only successful solves are billed.
