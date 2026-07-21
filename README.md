@@ -30,6 +30,8 @@ fn main() {
         sitekey: "6LcvL3UrAAAAAO_9u8Seiuf-I6F_tP_jSS-zndXV".into(),
         url: "https://www.ticketmaster.com".into(),
         action: "Event".into(),
+        // Send a real desktop UA — the token embeds it, so match the browser your traffic presents.
+        user_agent: Some("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".into()),
         enterprise: true, // ProxyLess Enterprise
         ..Default::default()
     }).unwrap();
