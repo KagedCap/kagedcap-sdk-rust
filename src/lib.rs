@@ -40,8 +40,11 @@ impl std::error::Error for KagedCapError {}
 pub struct SolveParams {
     pub sitekey: String,
     pub url: String,
+    /// reCAPTCHA action — required for v3, ignored (leave empty) for v2.
     pub action: String,
     pub task: Option<String>,
+    /// reCAPTCHA version: `None`/`"v3"` (default) or `"v2"` (invisible). Ignored if `task` is set.
+    pub version: Option<String>,
     pub enterprise: bool,
     pub proxy: Option<String>,
     pub user_agent: Option<String>,
@@ -67,10 +70,15 @@ pub struct Balance {
     pub display: String,
 }
 
-/// Pick the task string from the enterprise flag and whether a proxy is set.
-pub fn derive_task(enterprise: bool, has_proxy: bool) -> String {
+/// Pick the task string from version, the enterprise flag, and whether a proxy is set.
+/// version `Some("v2")` selects reCAPTCHA v2 invisible (no enterprise variant yet).
+pub fn derive_task(enterprise: bool, has_proxy: bool, version: Option<&str>) -> String {
+    let suffix = if has_proxy { "Task" } else { "TaskProxyLess" };
+    if version == Some("v2") {
+        return format!("ReCaptchaV2{}", suffix);
+    }
     let base = if enterprise { "ReCaptchaV3Enterprise" } else { "ReCaptchaV3" };
-    format!("{}{}", base, if has_proxy { "Task" } else { "TaskProxyLess" })
+    format!("{}{}", base, suffix)
 }
 
 pub struct KagedCapClient {
@@ -103,12 +111,15 @@ impl KagedCapClient {
         let task = params
             .task
             .clone()
-            .unwrap_or_else(|| derive_task(params.enterprise, params.proxy.is_some()));
+            .unwrap_or_else(|| derive_task(params.enterprise, params.proxy.is_some(), params.version.as_deref()));
         let mut body = Map::new();
         body.insert("task".into(), json!(task));
         body.insert("url".into(), json!(params.url));
         body.insert("sitekey".into(), json!(params.sitekey));
-        body.insert("action".into(), json!(params.action));
+        // Omit action when empty — v2 has no action, and "" fails server validation.
+        if !params.action.is_empty() {
+            body.insert("action".into(), json!(params.action));
+        }
         if let Some(p) = &params.proxy {
             body.insert("proxy".into(), json!(p));
         }
