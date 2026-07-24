@@ -1,4 +1,4 @@
-//! Official KagedCap Rust SDK — solve reCAPTCHA v3 tokens with an API key.
+//! Official KagedCap Rust SDK — solve reCAPTCHA, Ticketmaster tmpt, and Kasada with an API key.
 //!
 //! ```no_run
 //! use kagedcap::{KagedCapClient, SolveParams};
@@ -13,9 +13,25 @@
 //! }).unwrap();
 //! println!("{}", res.token);
 //! ```
+//!
+//! Kasada is a two-step flow — the login result carries its headers into the reload:
+//!
+//! ```no_run
+//! use kagedcap::{KagedCapClient, KasadaParams};
+//!
+//! let kc = KagedCapClient::new(std::env::var("KAGEDCAP_API_KEY").unwrap());
+//! let login = kc.kasada_login(KasadaParams {
+//!     site: Some("ticketmaster".into()),
+//!     proxy: Some("http://user:pass@1.2.3.4:8080".into()),
+//!     ..Default::default()
+//! }).unwrap();
+//! let fresh = kc.kasada_reload(&login).unwrap();
+//! println!("{}", fresh.x_kpsdk_cd);
+//! ```
 
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use std::collections::HashMap;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.kagedcap.io";
 
@@ -60,6 +76,44 @@ pub struct SolveResult {
     pub task: String,
     pub score: Option<f64>,
     pub verification: Option<Value>,
+}
+
+/// Inputs to start a Kasada session (`KasadaLogin`).
+#[derive(Debug, Default, Clone)]
+pub struct KasadaParams {
+    /// Proxy — required; the Kasada token is IP-bound, so reuse it on the target request.
+    pub proxy: Option<String>,
+    /// Kasada site flow, e.g. `"ticketmaster"`. Defaults server-side when `None`.
+    pub site: Option<String>,
+    /// Optional informational page URL.
+    pub url: Option<String>,
+}
+
+/// A Kasada solve result. Unlike reCAPTCHA/tmpt there is no `token` — replay `headers`
+/// (user-agent + client hints) and the `x_kpsdk_*` values on your request. Pass the whole
+/// result to [`KagedCapClient::kasada_reload`] to refresh the session later.
+#[derive(Debug, Clone, Deserialize)]
+pub struct KasadaResult {
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default)]
+    pub task: String,
+    #[serde(default)]
+    pub site: String,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub x_kpsdk_ct: String,
+    #[serde(default)]
+    pub x_kpsdk_cd: String,
+    #[serde(default)]
+    pub x_kpsdk_v: String,
+    #[serde(default)]
+    pub x_kpsdk_h: String,
+    #[serde(default)]
+    pub kpsdk_st: Option<i64>,
+    #[serde(default)]
+    pub user_agent: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,6 +188,49 @@ impl KagedCapClient {
         }
         if let Some(sk) = &params.secret_key {
             body.insert("secretKey".into(), json!(sk));
+        }
+        self.request("POST", "/solve", Some(Value::Object(body)))
+    }
+
+    /// Start a Kasada session. Requires `proxy` (the token is IP-bound). Returns the full
+    /// header set — keep it and pass it to [`Self::kasada_reload`] to refresh it later.
+    pub fn kasada_login(&self, params: KasadaParams) -> Result<KasadaResult, KagedCapError> {
+        let mut body = Map::new();
+        body.insert("task".into(), json!("KasadaLogin"));
+        if let Some(s) = &params.site {
+            body.insert("site".into(), json!(s));
+        }
+        if let Some(u) = &params.url {
+            body.insert("url".into(), json!(u));
+        }
+        if let Some(p) = &params.proxy {
+            body.insert("proxy".into(), json!(p));
+        }
+        self.request("POST", "/solve", Some(Value::Object(body)))
+    }
+
+    /// Refresh a Kasada session from a prior [`KasadaResult`] — no proxy needed. The
+    /// session's `kpsdk_st` and `x_kpsdk_*` values are resent for you.
+    pub fn kasada_reload(&self, prev: &KasadaResult) -> Result<KasadaResult, KagedCapError> {
+        let kpsdk_st = prev.kpsdk_st.ok_or_else(|| KagedCapError {
+            status: 0,
+            code: "validation_error".into(),
+            message: "kasada_reload: prev result has no kpsdk_st".into(),
+        })?;
+        let mut body = Map::new();
+        body.insert("task".into(), json!("KasadaReload"));
+        body.insert("kpsdk_st".into(), json!(kpsdk_st));
+        if !prev.site.is_empty() {
+            body.insert("site".into(), json!(prev.site));
+        }
+        if !prev.x_kpsdk_ct.is_empty() {
+            body.insert("x_kpsdk_ct".into(), json!(prev.x_kpsdk_ct));
+        }
+        if !prev.x_kpsdk_v.is_empty() {
+            body.insert("x_kpsdk_v".into(), json!(prev.x_kpsdk_v));
+        }
+        if !prev.x_kpsdk_h.is_empty() {
+            body.insert("x_kpsdk_h".into(), json!(prev.x_kpsdk_h));
         }
         self.request("POST", "/solve", Some(Value::Object(body)))
     }
