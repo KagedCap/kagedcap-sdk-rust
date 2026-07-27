@@ -112,6 +112,12 @@ pub struct KasadaResult {
     pub x_kpsdk_h: String,
     #[serde(default)]
     pub kpsdk_st: Option<i64>,
+    /// Session PoW hash (sessionHash) — resent to `kasada_reload` to refresh the cd.
+    #[serde(default)]
+    pub hash: String,
+    /// Kasada's trust verdict: `true` = high-trust token.
+    #[serde(default)]
+    pub reload: bool,
     #[serde(default)]
     pub user_agent: String,
 }
@@ -222,6 +228,9 @@ impl KagedCapClient {
         body.insert("kpsdk_st".into(), json!(kpsdk_st));
         if !prev.site.is_empty() {
             body.insert("site".into(), json!(prev.site));
+        }
+        if !prev.hash.is_empty() {
+            body.insert("hash".into(), json!(prev.hash));
         }
         if !prev.x_kpsdk_ct.is_empty() {
             body.insert("x_kpsdk_ct".into(), json!(prev.x_kpsdk_ct));

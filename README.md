@@ -61,7 +61,7 @@ sitekeys, or set `task` explicitly.
 
 `kasada_login` starts a session (requires a proxy — the token is IP-bound) and returns the
 full header set. Keep that result and pass it to `kasada_reload` to refresh the session — the
-SDK resends the session's `kpsdk_st` and `x_kpsdk_*` values for you.
+SDK resends the session's `kpsdk_st`, `hash`, and `x_kpsdk_*` values for you (`hash` + `x_kpsdk_ct` are required).
 
 ```rust
 use kagedcap::{KagedCapClient, KasadaParams};
