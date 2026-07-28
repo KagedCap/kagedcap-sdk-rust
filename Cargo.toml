@@ -1,6 +1,6 @@
 [package]
 name = "kagedcap"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Official KagedCap Rust SDK — solve reCAPTCHA, Ticketmaster tmpt, and Kasada."
 license = "MIT"
