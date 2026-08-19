@@ -35,6 +35,11 @@ use std::collections::HashMap;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.kagedcap.io";
 
+/// User-agent sent on solves that don't set one. This is the exact Chrome desktop profile
+/// the solver fleet runs, so the default agrees with the server instead of fighting it —
+/// bump this single line when the fleet moves to a newer Chrome.
+pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+
 /// Returned on any non-2xx response or transport failure.
 #[derive(Debug, Clone)]
 pub struct KagedCapError {
@@ -63,6 +68,7 @@ pub struct SolveParams {
     pub version: Option<String>,
     pub enterprise: bool,
     pub proxy: Option<String>,
+    /// Browser UA the token is bound to. `None` or empty sends [`DEFAULT_USER_AGENT`].
     pub user_agent: Option<String>,
     pub device: Option<String>,
     pub enhanced: bool,
@@ -183,9 +189,15 @@ impl KagedCapClient {
         if let Some(p) = &params.proxy {
             body.insert("proxy".into(), json!(p));
         }
-        if let Some(ua) = &params.user_agent {
-            body.insert("userAgent".into(), json!(ua));
-        }
+        // Always send a UA — the gateway doesn't default it, so a solve without one leaves the
+        // token unbound to any real browser. A caller-supplied value always wins; empty counts
+        // as unset. (Kasada is deliberately excluded: see `kasada_login`.)
+        let user_agent = params
+            .user_agent
+            .as_deref()
+            .filter(|ua| !ua.is_empty())
+            .unwrap_or(DEFAULT_USER_AGENT);
+        body.insert("userAgent".into(), json!(user_agent));
         if let Some(d) = &params.device {
             body.insert("device".into(), json!(d));
         }
@@ -201,6 +213,8 @@ impl KagedCapClient {
     /// Start a Kasada session. Requires `proxy` (the token is IP-bound). Returns the full
     /// header set — keep it and pass it to [`Self::kasada_reload`] to refresh it later.
     pub fn kasada_login(&self, params: KasadaParams) -> Result<KasadaResult, KagedCapError> {
+        // No userAgent here (nor on reload): the gateway strips it for the Kasada fleet and the
+        // harvester reports back the identity it actually used, in `headers` / `user_agent`.
         let mut body = Map::new();
         body.insert("task".into(), json!("KasadaLogin"));
         if let Some(s) = &params.site {

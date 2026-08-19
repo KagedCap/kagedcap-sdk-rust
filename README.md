@@ -30,8 +30,7 @@ fn main() {
         sitekey: "6LcvL3UrAAAAAO_9u8Seiuf-I6F_tP_jSS-zndXV".into(),
         url: "https://www.ticketmaster.com".into(),
         action: "Event".into(),
-        // Send a real desktop UA — the token embeds it, so match the browser your traffic presents.
-        user_agent: Some("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".into()),
+        // user_agent left unset → kagedcap::DEFAULT_USER_AGENT. Set it to match your own traffic.
         enterprise: true, // ProxyLess Enterprise
         ..Default::default()
     }).unwrap();
@@ -57,6 +56,20 @@ let res = kc.solve(SolveParams {
 Leave `proxy` as `None` for a ProxyLess solve. Set `enterprise: true` for Enterprise
 sitekeys, or set `task` explicitly.
 
+## User agent
+
+The token embeds the UA it was minted with, so every solve carries one. Leave `user_agent`
+as `None` (or empty) and the SDK sends `kagedcap::DEFAULT_USER_AGENT` — the same Chrome
+desktop profile the solver fleet runs:
+
+```rust
+println!("{}", kagedcap::DEFAULT_USER_AGENT);
+// Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+```
+
+Set `user_agent` yourself when your traffic presents a different browser — an explicit value
+always wins. Kasada is the exception: it takes no UA at all (see below).
+
 ## Kasada
 
 `kasada_login` starts a session (requires a proxy — the token is IP-bound) and returns the
@@ -80,6 +93,8 @@ println!("{}", fresh.x_kpsdk_cd);
 ```
 
 Kasada results have **no `token`** — replay `headers` and the `x_kpsdk_*` values instead.
+No user agent is sent on either Kasada call: the harvester picks the identity and reports it
+back in `headers` / `user_agent`, so replay that one rather than choosing your own.
 
 ## Errors
 
