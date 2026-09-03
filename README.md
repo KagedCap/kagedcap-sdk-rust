@@ -2,8 +2,8 @@
 
 # KagedCap Rust SDK
 
-Solve reCAPTCHA (v3, v3 Enterprise, v2), Ticketmaster tmpt, and Kasada with a single API
-key. Blocking client built on `ureq`.
+Solve reCAPTCHA (v3, v3 Enterprise, v2), Ticketmaster tmpt and evaluate, and
+Kasada with a single API key. Blocking client built on `ureq`.
 
 ## Install
 
@@ -95,6 +95,33 @@ println!("{}", fresh.x_kpsdk_cd);
 Kasada results have **no `token`** — replay `headers` and the `x_kpsdk_*` values instead.
 No user agent is sent on either Kasada call: the harvester picks the identity and reports it
 back in `headers` / `user_agent`, so replay that one rather than choosing your own.
+
+## Evaluate (Ticketmaster EPSF)
+
+`evaluate` returns the EPSF allow token to replay on the next APS step, alongside the
+`decision` behind it (`allow`, `challenge`, or `block`). `url` and `proxy` are both required.
+
+```rust
+use kagedcap::{KagedCapClient, EvaluateParams};
+
+let kc = KagedCapClient::new(std::env::var("KAGEDCAP_API_KEY").unwrap());
+
+let res = kc.evaluate(EvaluateParams {
+    url: "https://auth.ticketmaster.com/epsf/gec/".into(),
+    proxy: "http://user:pass@1.2.3.4:8080".into(), // or host:port:user:pass
+    phone_number: Some("+12025550123".into()),     // verify_phone only, country prefix included
+    ..Default::default()
+})?;
+println!("{} {}", res.decision, res.token);
+```
+
+The URL picks the action — an `auth.*` host evaluates as `verify_phone`, any other
+Ticketmaster host as `join_queue` — so leave `action` as `None` unless you need to override
+it with `Some("verify_phone")` / `Some("join_queue")`. For a queue evaluate, set `queue_id`
+and `event_id` (they go on the wire as `queueId` / `eventId`).
+
+`user_agent` follows the same default as `solve`, and it does more work here: the solver
+picks its device profile from it, so set it to match the browser your own traffic presents.
 
 ## Errors
 

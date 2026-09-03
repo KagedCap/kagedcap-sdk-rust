@@ -1,4 +1,5 @@
-//! Official KagedCap Rust SDK — solve reCAPTCHA, Ticketmaster tmpt, and Kasada with an API key.
+//! Official KagedCap Rust SDK — solve reCAPTCHA, Ticketmaster tmpt/evaluate, and Kasada with an
+//! API key.
 //!
 //! ```no_run
 //! use kagedcap::{KagedCapClient, SolveParams};
@@ -27,6 +28,20 @@
 //! }).unwrap();
 //! let fresh = kc.kasada_reload(&login).unwrap();
 //! println!("{}", fresh.x_kpsdk_cd);
+//! ```
+//!
+//! Ticketmaster's EPSF evaluate returns the allow token plus the decision behind it:
+//!
+//! ```no_run
+//! use kagedcap::{KagedCapClient, EvaluateParams};
+//!
+//! let kc = KagedCapClient::new(std::env::var("KAGEDCAP_API_KEY").unwrap());
+//! let res = kc.evaluate(EvaluateParams {
+//!     url: "https://auth.ticketmaster.com/epsf/gec/".into(),
+//!     proxy: "http://user:pass@1.2.3.4:8080".into(),
+//!     ..Default::default()
+//! }).unwrap();
+//! println!("{} {}", res.decision, res.token);
 //! ```
 
 use serde::Deserialize;
@@ -126,6 +141,36 @@ pub struct KasadaResult {
     pub reload: bool,
     #[serde(default)]
     pub user_agent: String,
+}
+
+/// Inputs for a Ticketmaster EPSF evaluate (`EvaluateTask`).
+#[derive(Debug, Default, Clone)]
+pub struct EvaluateParams {
+    /// Ticketmaster page being evaluated — required, and it also picks the action: an
+    /// `auth.*` host evaluates as `verify_phone`, any other Ticketmaster host as `join_queue`.
+    pub url: String,
+    /// Proxy — required; the EPSF token is IP-bound, so replay it from the same exit.
+    pub proxy: String,
+    /// `"verify_phone"` or `"join_queue"`. Leave `None` to take the host's default (see `url`).
+    pub action: Option<String>,
+    /// verify_phone only. Country prefix included, e.g. `"+12025550123"`.
+    pub phone_number: Option<String>,
+    /// join_queue only.
+    pub queue_id: Option<String>,
+    /// join_queue only.
+    pub event_id: Option<String>,
+    /// Browser UA the evaluate is run as. `None` or empty sends [`DEFAULT_USER_AGENT`].
+    pub user_agent: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EvaluateResult {
+    pub success: bool,
+    pub task: String,
+    /// EPSF allow token — replay it on the next APS step.
+    pub token: String,
+    /// Ticketmaster's verdict: `allow`, `challenge`, or `block`.
+    pub decision: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -255,6 +300,40 @@ impl KagedCapClient {
         if !prev.x_kpsdk_h.is_empty() {
             body.insert("x_kpsdk_h".into(), json!(prev.x_kpsdk_h));
         }
+        self.request("POST", "/solve", Some(Value::Object(body)))
+    }
+
+    /// Run a Ticketmaster EPSF evaluate. Requires `url` and `proxy` (the token is IP-bound).
+    /// Returns the allow token and the decision Ticketmaster reached.
+    pub fn evaluate(&self, params: EvaluateParams) -> Result<EvaluateResult, KagedCapError> {
+        let mut body = Map::new();
+        body.insert("task".into(), json!("EvaluateTask"));
+        body.insert("url".into(), json!(params.url));
+        body.insert("proxy".into(), json!(params.proxy));
+        // Sent only when the caller picked one. The server derives the action from the host
+        // (auth.* → verify_phone, else join_queue), so defaulting it here would quietly
+        // override a choice the SDK can't make as well as the gateway can.
+        if let Some(a) = &params.action {
+            body.insert("action".into(), json!(a));
+        }
+        if let Some(p) = &params.phone_number {
+            body.insert("phone_number".into(), json!(p));
+        }
+        // camelCase on the wire, unlike phone_number — a snake_case key is dropped silently.
+        if let Some(q) = &params.queue_id {
+            body.insert("queueId".into(), json!(q));
+        }
+        if let Some(e) = &params.event_id {
+            body.insert("eventId".into(), json!(e));
+        }
+        // Same default as `solve`, and it matters more here: the UA selects the device profile
+        // (screen, GPU, client hints) the solver emulates, not just a header.
+        let user_agent = params
+            .user_agent
+            .as_deref()
+            .filter(|ua| !ua.is_empty())
+            .unwrap_or(DEFAULT_USER_AGENT);
+        body.insert("userAgent".into(), json!(user_agent));
         self.request("POST", "/solve", Some(Value::Object(body)))
     }
 
